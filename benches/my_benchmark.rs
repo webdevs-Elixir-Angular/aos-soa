@@ -3,6 +3,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
 
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
 const NUM_PARTICLES: usize = 100_000;
 
 //================================================
@@ -121,7 +124,82 @@ fn update_positions(c: &mut Criterion) {
 }
 
 //================================================
-// 4. Criterion Boilerplate
+// 4. SIMD Benchmarks
 //================================================
+
+#[cfg(target_arch = "x86_64")]
+fn update_positions_simd(c: &mut Criterion) {
+    // --- AoS with SIMD (difficult due to non-contiguous data) ---
+    c.bench_function("AoS Update (SIMD)", |b| {
+        let mut aos_data = AoS::new(NUM_PARTICLES);
+        
+        b.iter(|| {
+            unsafe {
+                // For AoS, SIMD is challenging because data is interleaved.
+                // We can process multiple particles, but need to load/store
+                // the entire struct for each particle.
+                for chunk in aos_data.particles.chunks_exact_mut(4) {
+                    // Load x values from 4 particles (strided load)
+                    let x = _mm_set_ps(chunk[3].x, chunk[2].x, chunk[1].x, chunk[0].x);
+                    let vx = _mm_set_ps(chunk[3].vx, chunk[2].vx, chunk[1].vx, chunk[0].vx);
+                    
+                    // Perform SIMD addition
+                    let result = _mm_add_ps(x, vx);
+                    
+                    // Store results back (strided store)
+                    let mut temp = [0f32; 4];
+                    _mm_storeu_ps(temp.as_mut_ptr(), result);
+                    chunk[0].x = temp[0];
+                    chunk[1].x = temp[1];
+                    chunk[2].x = temp[2];
+                    chunk[3].x = temp[3];
+                }
+            }
+            black_box(&aos_data);
+        })
+    });
+
+    // --- SoA with SIMD (natural fit) ---
+    c.bench_function("SoA Update (SIMD)", |b| {
+        let mut soa_data = SoA::new(NUM_PARTICLES);
+        
+        b.iter(|| {
+            unsafe {
+                // For SoA, SIMD is natural because data is already contiguous.
+                // We can process 4 floats at once with no gather/scatter overhead.
+                let chunks = NUM_PARTICLES / 4;
+                for i in 0..chunks {
+                    let idx = i * 4;
+                    
+                    // Load 4 contiguous x values
+                    let x = _mm_loadu_ps(soa_data.x.as_ptr().add(idx));
+                    // Load 4 contiguous vx values
+                    let vx = _mm_loadu_ps(soa_data.vx.as_ptr().add(idx));
+                    
+                    // Perform SIMD addition
+                    let result = _mm_add_ps(x, vx);
+                    
+                    // Store 4 contiguous results
+                    _mm_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result);
+                }
+                
+                // Handle remaining elements
+                for i in (chunks * 4)..NUM_PARTICLES {
+                    soa_data.x[i] += soa_data.vx[i];
+                }
+            }
+            black_box(&soa_data);
+        })
+    });
+}
+
+//================================================
+// 5. Criterion Boilerplate
+//================================================
+#[cfg(target_arch = "x86_64")]
+criterion_group!(benches, update_positions, update_positions_simd);
+
+#[cfg(not(target_arch = "x86_64"))]
 criterion_group!(benches, update_positions);
+
 criterion_main!(benches);
