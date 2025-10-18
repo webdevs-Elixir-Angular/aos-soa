@@ -159,32 +159,95 @@ fn update_positions_simd(c: &mut Criterion) {
         })
     });
 
-    // --- SoA with SIMD (natural fit) ---
-    c.bench_function("SoA Update (SIMD)", |b| {
+    // --- SoA with SIMD (4-wide: SSE) ---
+    c.bench_function("SoA Update (SIMD x4)", |b| {
         let mut soa_data = SoA::new(NUM_PARTICLES);
         
         b.iter(|| {
             unsafe {
-                // For SoA, SIMD is natural because data is already contiguous.
-                // We can process 4 floats at once with no gather/scatter overhead.
                 let chunks = NUM_PARTICLES / 4;
                 for i in 0..chunks {
                     let idx = i * 4;
-                    
-                    // Load 4 contiguous x values
                     let x = _mm_loadu_ps(soa_data.x.as_ptr().add(idx));
-                    // Load 4 contiguous vx values
                     let vx = _mm_loadu_ps(soa_data.vx.as_ptr().add(idx));
-                    
-                    // Perform SIMD addition
                     let result = _mm_add_ps(x, vx);
-                    
-                    // Store 4 contiguous results
                     _mm_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result);
                 }
-                
-                // Handle remaining elements
                 for i in (chunks * 4)..NUM_PARTICLES {
+                    soa_data.x[i] += soa_data.vx[i];
+                }
+            }
+            black_box(&soa_data);
+        })
+    });
+
+    // --- SoA with SIMD (8-wide: AVX) ---
+    c.bench_function("SoA Update (SIMD x8)", |b| {
+        let mut soa_data = SoA::new(NUM_PARTICLES);
+        
+        b.iter(|| {
+            unsafe {
+                let chunks = NUM_PARTICLES / 8;
+                for i in 0..chunks {
+                    let idx = i * 8;
+                    let x = _mm256_loadu_ps(soa_data.x.as_ptr().add(idx));
+                    let vx = _mm256_loadu_ps(soa_data.vx.as_ptr().add(idx));
+                    let result = _mm256_add_ps(x, vx);
+                    _mm256_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result);
+                }
+                for i in (chunks * 8)..NUM_PARTICLES {
+                    soa_data.x[i] += soa_data.vx[i];
+                }
+            }
+            black_box(&soa_data);
+        })
+    });
+
+    // --- SoA with SIMD (16-wide: AVX-512) ---
+    #[cfg(target_feature = "avx512f")]
+    c.bench_function("SoA Update (SIMD x16)", |b| {
+        let mut soa_data = SoA::new(NUM_PARTICLES);
+        
+        b.iter(|| {
+            unsafe {
+                let chunks = NUM_PARTICLES / 16;
+                for i in 0..chunks {
+                    let idx = i * 16;
+                    let x = _mm512_loadu_ps(soa_data.x.as_ptr().add(idx));
+                    let vx = _mm512_loadu_ps(soa_data.vx.as_ptr().add(idx));
+                    let result = _mm512_add_ps(x, vx);
+                    _mm512_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result);
+                }
+                for i in (chunks * 16)..NUM_PARTICLES {
+                    soa_data.x[i] += soa_data.vx[i];
+                }
+            }
+            black_box(&soa_data);
+        })
+    });
+
+    // --- SoA with SIMD (32-wide: Using 2x AVX-512) ---
+    #[cfg(target_feature = "avx512f")]
+    c.bench_function("SoA Update (SIMD x32)", |b| {
+        let mut soa_data = SoA::new(NUM_PARTICLES);
+        
+        b.iter(|| {
+            unsafe {
+                let chunks = NUM_PARTICLES / 32;
+                for i in 0..chunks {
+                    let idx = i * 32;
+                    
+                    let x1 = _mm512_loadu_ps(soa_data.x.as_ptr().add(idx));
+                    let vx1 = _mm512_loadu_ps(soa_data.vx.as_ptr().add(idx));
+                    let result1 = _mm512_add_ps(x1, vx1);
+                    _mm512_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result1);
+                    
+                    let x2 = _mm512_loadu_ps(soa_data.x.as_ptr().add(idx + 16));
+                    let vx2 = _mm512_loadu_ps(soa_data.vx.as_ptr().add(idx + 16));
+                    let result2 = _mm512_add_ps(x2, vx2);
+                    _mm512_storeu_ps(soa_data.x.as_mut_ptr().add(idx + 16), result2);
+                }
+                for i in (chunks * 32)..NUM_PARTICLES {
                     soa_data.x[i] += soa_data.vx[i];
                 }
             }
