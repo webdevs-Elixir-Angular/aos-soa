@@ -16,3 +16,7 @@ harness = false
 [[bench]]
 name = "auto_optimisation_benchmark"
 harness = false
+
+[[bench]]
+name = "improved_benchmark"
+harness = false

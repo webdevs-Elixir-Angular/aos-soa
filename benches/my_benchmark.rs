@@ -88,7 +88,8 @@ fn update_positions(c: &mut Criterion) {
             for p in aos_data.particles.iter_mut() {
                 p.x += p.vx;
             }
-            black_box(&aos_data); // Prevent the entire loop from being optimized away
+            // ✅ Return a value that depends on the computation
+            black_box(aos_data.particles[0].x)
         })
     });
 
@@ -103,7 +104,8 @@ fn update_positions(c: &mut Criterion) {
             for i in 0..NUM_PARTICLES {
                 soa_data.x[i] += soa_data.vx[i];
             }
-            black_box(&soa_data); // Prevent the entire loop from being optimized away
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 
@@ -118,7 +120,8 @@ fn update_positions(c: &mut Criterion) {
             for (pos_x, vel_x) in soa_data.x.iter_mut().zip(soa_data.vx.iter()) {
                 *pos_x += *vel_x;
             }
-            black_box(&soa_data);
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 }
@@ -132,7 +135,7 @@ fn update_positions_simd(c: &mut Criterion) {
     // --- AoS with SIMD (difficult due to non-contiguous data) ---
     c.bench_function("AoS Update (SIMD)", |b| {
         let mut aos_data = AoS::new(NUM_PARTICLES);
-        
+
         b.iter(|| {
             unsafe {
                 // For AoS, SIMD is challenging because data is interleaved.
@@ -142,10 +145,10 @@ fn update_positions_simd(c: &mut Criterion) {
                     // Load x values from 4 particles (strided load)
                     let x = _mm_set_ps(chunk[3].x, chunk[2].x, chunk[1].x, chunk[0].x);
                     let vx = _mm_set_ps(chunk[3].vx, chunk[2].vx, chunk[1].vx, chunk[0].vx);
-                    
+
                     // Perform SIMD addition
                     let result = _mm_add_ps(x, vx);
-                    
+
                     // Store results back (strided store)
                     let mut temp = [0f32; 4];
                     _mm_storeu_ps(temp.as_mut_ptr(), result);
@@ -155,14 +158,15 @@ fn update_positions_simd(c: &mut Criterion) {
                     chunk[3].x = temp[3];
                 }
             }
-            black_box(&aos_data);
+            // ✅ Return a value that depends on the computation
+            black_box(aos_data.particles[0].x)
         })
     });
 
     // --- SoA with SIMD (4-wide: SSE) ---
     c.bench_function("SoA Update (SIMD x4)", |b| {
         let mut soa_data = SoA::new(NUM_PARTICLES);
-        
+
         b.iter(|| {
             unsafe {
                 let chunks = NUM_PARTICLES / 4;
@@ -177,14 +181,15 @@ fn update_positions_simd(c: &mut Criterion) {
                     soa_data.x[i] += soa_data.vx[i];
                 }
             }
-            black_box(&soa_data);
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 
     // --- SoA with SIMD (8-wide: AVX) ---
     c.bench_function("SoA Update (SIMD x8)", |b| {
         let mut soa_data = SoA::new(NUM_PARTICLES);
-        
+
         b.iter(|| {
             unsafe {
                 let chunks = NUM_PARTICLES / 8;
@@ -199,15 +204,18 @@ fn update_positions_simd(c: &mut Criterion) {
                     soa_data.x[i] += soa_data.vx[i];
                 }
             }
-            black_box(&soa_data);
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 
     // --- SoA with SIMD (16-wide: AVX-512) ---
+    // Note: AVX-512 is not available on most consumer CPUs
+    // Compile with RUSTFLAGS="-C target-cpu=native -C target-feature=+avx512f" to enable
     #[cfg(target_feature = "avx512f")]
     c.bench_function("SoA Update (SIMD x16)", |b| {
         let mut soa_data = SoA::new(NUM_PARTICLES);
-        
+
         b.iter(|| {
             unsafe {
                 let chunks = NUM_PARTICLES / 16;
@@ -222,26 +230,28 @@ fn update_positions_simd(c: &mut Criterion) {
                     soa_data.x[i] += soa_data.vx[i];
                 }
             }
-            black_box(&soa_data);
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 
     // --- SoA with SIMD (32-wide: Using 2x AVX-512) ---
+    // Note: AVX-512 is not available on most consumer CPUs
     #[cfg(target_feature = "avx512f")]
     c.bench_function("SoA Update (SIMD x32)", |b| {
         let mut soa_data = SoA::new(NUM_PARTICLES);
-        
+
         b.iter(|| {
             unsafe {
                 let chunks = NUM_PARTICLES / 32;
                 for i in 0..chunks {
                     let idx = i * 32;
-                    
+
                     let x1 = _mm512_loadu_ps(soa_data.x.as_ptr().add(idx));
                     let vx1 = _mm512_loadu_ps(soa_data.vx.as_ptr().add(idx));
                     let result1 = _mm512_add_ps(x1, vx1);
                     _mm512_storeu_ps(soa_data.x.as_mut_ptr().add(idx), result1);
-                    
+
                     let x2 = _mm512_loadu_ps(soa_data.x.as_ptr().add(idx + 16));
                     let vx2 = _mm512_loadu_ps(soa_data.vx.as_ptr().add(idx + 16));
                     let result2 = _mm512_add_ps(x2, vx2);
@@ -251,7 +261,8 @@ fn update_positions_simd(c: &mut Criterion) {
                     soa_data.x[i] += soa_data.vx[i];
                 }
             }
-            black_box(&soa_data);
+            // ✅ Return a value that depends on the computation
+            black_box(soa_data.x[0])
         })
     });
 }
