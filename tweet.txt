@@ -1,0 +1,11 @@
+🚀 Benchmarked Array of Structures vs Structure of Arrays in Rust
+
+Result: SoA is 5.3x faster (15µs vs 80µs for 100K elements)
+
+Why? Cache locality + auto-vectorization = 6.5M elements/sec
+
+Manual SIMD on AoS? Actually SLOWER than scalar due to strided memory access.
+
+Data layout matters. A lot.
+
+#RustLang #PerformanceEngineering
