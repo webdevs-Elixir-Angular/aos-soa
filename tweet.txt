@@ -1,11 +1,12 @@
-🚀 Benchmarked Array of Structures vs Structure of Arrays in Rust
+🚀 Benchmarked AoS vs SoA in Rust
 
-Result: SoA is 5.3x faster (15µs vs 80µs for 100K elements)
+SoA + .zip(): 54ns (18.6 Gelem/s)
+AoS: 218ns (4.58 Gelem/s)
 
-Why? Cache locality + auto-vectorization = 6.5M elements/sec
+4.1x faster from data layout alone!
 
-Manual SIMD on AoS? Actually SLOWER than scalar due to strided memory access.
+Plot twist: SoA with manual indexing was 11x SLOWER than .zip() - idiomatic iterators auto-vectorize perfectly.
 
-Data layout matters. A lot.
+Data layout + iterators = 🔥
 
-#RustLang #PerformanceEngineering
+#RustLang #Performance
